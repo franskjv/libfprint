@@ -70,6 +70,7 @@
 #define GOODIX53XD_POLL_DELAY 100 // ms between two polled frames
 #define GOODIX53XD_FINGER_NOISE_FACTOR 4
 #define GOODIX53XD_FINGER_MIN_DELTA 16 // 12 bit units
+#define GOODIX53XD_MAX_BACKGROUND_NOISE 100 // ~7 without finger
 // A finger still landing gives a partial, blurry image: the capture waits
 // for the delta to the background to stop changing, then rejects presses
 // that are too light
@@ -889,6 +890,16 @@ static void scan_on_read_img(FpDevice* dev, guint8* data, guint16 len,
 
         decode_frame(frame, data);
         delta = frame_delta(frame, self->detect_img);
+
+        // A finger landing during calibration shows up as noise: the
+        // threshold derived from it would never be reached by a press
+        if (delta > GOODIX53XD_MAX_BACKGROUND_NOISE) {
+            fp_dbg("Background noise %u too high, calibrating again", delta);
+            self->background_frames = 0;
+            fpi_ssm_jump_to_state(ssm, SCAN_STAGE_WAIT);
+            return;
+        }
+
         self->finger_threshold = MAX(delta * GOODIX53XD_FINGER_NOISE_FACTOR,
                                      delta + GOODIX53XD_FINGER_MIN_DELTA);
         fp_dbg("Background noise: %u, finger threshold: %u", delta,
